@@ -16,7 +16,7 @@ if __name__ == "__main__":
 
     train_datasets = []
     for skill in args.skill:
-        dataset = build_dataset(args.dataset, skill, 'val', args.single_image, args)
+        dataset = build_dataset(args.dataset, skill, 'train', args.single_image, args)
         train_datasets.append(dataset)
     
     if len(train_datasets) > 1:

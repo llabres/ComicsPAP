@@ -6,8 +6,6 @@ from utils import parse_arguments, start_experiment, save_results, build_model, 
 import os
 import json
 
-# CUDA_VISIBLE_DEVICES=0 python evaluate.py --split test --skill sequence_filling char_coherence visual_closure text_closure caption_relevance --model ../models/Qwen2.5-VL-3B-Instruct --eval_batch_size 10 --dataset_cache /data/users/evivoli/datasets/dcm_22k/stories/anns/single_image --single_image
-
 
 def extract_prediction(text):
     """Extract prediction number from model output."""
