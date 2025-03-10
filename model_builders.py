@@ -145,14 +145,23 @@ def build_qwen(args):
     import torch
     from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
     from qwen_vl_utils import process_vision_info
+    
+    if 'lora' in args.model:
+        model_path = args.model.split('_lora')[0]
+    else:
+        model_path = args.model
+    
     model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-        args.model,
+        model_path,
         torch_dtype=torch.bfloat16,
         attn_implementation="flash_attention_2",
         device_map='auto' if args.max_steps == 0 else None
     )
 
-    processor = AutoProcessor.from_pretrained(args.model)
+    if 'lora' in args.model:
+        model.load_adapter(args.model)
+
+    processor = AutoProcessor.from_pretrained(model_path)
     collator = QwenCollator(processor, args, process_vision_info)
 
     if args.max_steps != 0:
@@ -160,7 +169,6 @@ def build_qwen(args):
         return model, collator, train_collator
 
     return model, collator
-
 
 
 #================================================================
@@ -192,9 +200,16 @@ class SmolVLMCollator:
             "text_closure": "Pick A Panel Task: In the image you have two rows of comic panels. The top row is the context and the bottom row is the options. The context row has a missing panel marked with a question mark. Choose the option that best fits the missing panel. You must return your final answer as a number with 'answer: <your answer here>'\n\n",
             "caption_relevance": "Pick A Panel Task: In the image you have a row of comic panels. From the options pick the panel that best follows the context caption. You must return your final answer as a number with 'answer: <your answer here>'\n\n",
         }
+
+        single_image_prompts_simple = {
+            "sequence_filling": "Which panel from the bottom row best fits the missing panel spot in the top row? Reply with a number. \n\n",
+            "char_coherence": "Which panel from the bottom row best fits the missing panel spot in the top row? Reply with a number. \n\n",
+            "visual_closure": "Which panel from the bottom row best fits the missing panel spot in the top row? Reply with a number. \n\n",
+            "text_closure": "Which panel from the bottom row best fits the missing panel spot in the top row? Reply with a number. \n\n",
+            "caption_relevance": "Which panel best follows the context caption? Reply with a number. \n\n",
+        }
         self.train = train
 
-        self.prompts = multi_image_prompts if not args.single_image else single_image_prompts
         self.create_images_list = self._create_images_list_multi_panel if not args.single_image else self._create_images_list_single_image
         self.processor = processor
 
@@ -332,7 +347,7 @@ def build_smolvlm(args):
     if args.max_steps != 0:
         train_collator = SmolVLMCollator(processor, args, train=True)
         return model, collator, train_collator
-
+    
     return model, collator
 
 
@@ -413,5 +428,173 @@ def build_llama(args):
         device_map='auto'
     ).to("cuda")
     collator = LlamaCollator(processor, args)
+
+    return model, collator
+
+
+#================================================================
+#                       Paligemma Model
+#================================================================
+
+class PaliGemmaCollator:
+    def __init__(self, processor, args, train=False):        
+
+
+        single_image_prompts = {
+            "sequence_filling": "Pick A Panel Task: In the image you have two rows of comic panels. The top row is the context and the bottom row is the options. The context row has a missing panel marked with a question mark. Choose the option that best fits the missing panel. You can reason about your answer, but you must return your final answer as a number with 'answer: <your answer here>'\n\n",
+            "char_coherence": "Pick A Panel Task: In the image you have two rows of comic panels. The top row is the context and the bottom row is the options. The context row has a missing panel marked with a question mark. Choose the option that best fits the missing panel. You can reason about your answer, but you must return your final answer as a number with 'answer: <your answer here>'\n\n",
+            "visual_closure": "Pick A Panel Task: In the image you have two rows of comic panels. The top row is the context and the bottom row is the options. The context row has a missing panel marked with a question mark. Choose the option that best fits the missing panel. You can reason about your answer, but you must return your final answer as a number with 'answer: <your answer here>'\n\n",
+            "text_closure": "Pick A Panel Task: In the image you have two rows of comic panels. The top row is the context and the bottom row is the options. The context row has a missing panel marked with a question mark. Choose the option that best fits the missing panel. You can reason about your answer, but you must return your final answer as a number with 'answer: <your answer here>'\n\n",
+            "caption_relevance": "Pick A Panel Task: In the image you have a row of comic panels. From the options pick the panel that best follows the context caption. You can reason about your answer, but you must return your final answer as a number with 'answer: <your answer here>'\n\n",
+        }
+
+        self.processor = processor
+        self.train = train
+
+        self.prompts = single_image_prompts
+
+
+    def __call__(self, batch):
+        messages = []
+        for sample in batch:
+            message = self.prompts[sample["task_type"]]
+            if sample["task_type"] == "caption_relevance":
+                message.format(caption=sample["previous_panel_caption"])
+            messages.append(message)
+        inputs = self.processor(text=messages, images=[sample["single_image"] for sample in batch], return_tensors="pt", padding="longest")
+
+        return inputs, dict(labels=[sample["solution_index"] for sample in batch], sample_ids=[sample["sample_id"] for sample in batch], messages=messages)
+
+def build_paligemma(args):
+    import torch
+    from transformers import PaliGemmaProcessor, PaliGemmaForConditionalGeneration
+    
+    model = PaliGemmaForConditionalGeneration.from_pretrained(
+        args.model,
+        torch_dtype=torch.bfloat16,
+        attn_implementation="flash_attention_2",
+        device_map='auto' if args.max_steps == 0 else None
+    )
+
+    processor = PaliGemmaProcessor.from_pretrained(args.model)
+    collator = PaliGemmaCollator(processor, args)
+
+    return model, collator
+
+
+#================================================================
+#                       Molmo Model
+#================================================================
+
+class MolmoCollator:
+    def __init__(self, processor, args, train=False):        
+
+
+        single_image_prompts = {
+            "sequence_filling": "Pick A Panel Task: In the image you have two rows of comic panels. The top row is the context and the bottom row is the options. The context row has a missing panel marked with a question mark. Choose the option that best fits the missing panel. You must return your final answer as a number with 'answer: <your answer here>'\n\n",
+            "char_coherence": "Pick A Panel Task: In the image you have two rows of comic panels. The top row is the context and the bottom row is the options. The context row has a missing panel marked with a question mark. Choose the option that best fits the missing panel. You must return your final answer as a number with 'answer: <your answer here>'\n\n",
+            "visual_closure": "Pick A Panel Task: In the image you have two rows of comic panels. The top row is the context and the bottom row is the options. The context row has a missing panel marked with a question mark. Choose the option that best fits the missing panel. You must return your final answer as a number with 'answer: <your answer here>'\n\n",
+            "text_closure": "Pick A Panel Task: In the image you have two rows of comic panels. The top row is the context and the bottom row is the options. The context row has a missing panel marked with a question mark. Choose the option that best fits the missing panel. You must return your final answer as a number with 'answer: <your answer here>'\n\n",
+            "caption_relevance": "Pick A Panel Task: In the image you have a row of comic panels. From the options pick the panel that best follows the context caption. You must return your final answer as a number with 'answer: <your answer here>'",
+        }
+
+        self.processor = processor
+        self.train = train
+
+        self.prompts = single_image_prompts
+
+
+    def __call__(self, batch):
+        assert len(batch) == 1, "Molmo only supports single sample batches. Why? Beats me, I started modifying their processor to support batches, but I was too lazy to finish it."
+        
+        sample = batch[0]
+
+        message = self.prompts[sample["task_type"]]
+        if sample["task_type"] == "caption_relevance":
+            message += f"context: {sample["previous_panel_caption"]}\n\n"
+        
+        inputs = self.processor.process(text=message, images=[sample["single_image"]], return_tensors="pt", padding="longest")
+
+        return inputs, dict(labels=[sample["solution_index"] for sample in batch], sample_ids=[sample["sample_id"] for sample in batch])
+
+def build_molmo(args):
+    import transformers
+    assert transformers.__version__ == "4.43.3", "Molmo does not work with newer versions of transformers"
+
+    import torch
+    from transformers import AutoModelForCausalLM, AutoProcessor
+    
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model,
+        torch_dtype=torch.float32,
+        device_map='auto' if args.max_steps == 0 else None,
+        trust_remote_code=True,
+    )
+
+    processor = AutoProcessor.from_pretrained(args.model, trust_remote_code=True)
+    collator = MolmoCollator(processor, args)
+
+    return model, collator
+
+#================================================================
+#                       MiniCPM Model
+#================================================================
+
+class MiniCPMCollator:
+    def __init__(self, processor, args, train=False):        
+
+
+        single_image_prompts = {
+            "sequence_filling": "Pick A Panel Task: In the image you have two rows of comic panels. The top row is the context and the bottom row is the options. The context row has a missing panel marked with a question mark. Choose the option that best fits the missing panel. You must return your final answer as a number with 'answer: <your answer here>'\n\n",
+            "char_coherence": "Pick A Panel Task: In the image you have two rows of comic panels. The top row is the context and the bottom row is the options. The context row has a missing panel marked with a question mark. Choose the option that best fits the missing panel. You must return your final answer as a number with 'answer: <your answer here>'\n\n",
+            "visual_closure": "Pick A Panel Task: In the image you have two rows of comic panels. The top row is the context and the bottom row is the options. The context row has a missing panel marked with a question mark. Choose the option that best fits the missing panel. You must return your final answer as a number with 'answer: <your answer here>'\n\n",
+            "text_closure": "Pick A Panel Task: In the image you have two rows of comic panels. The top row is the context and the bottom row is the options. The context row has a missing panel marked with a question mark. Choose the option that best fits the missing panel. You must return your final answer as a number with 'answer: <your answer here>'\n\n",
+            "caption_relevance": "Pick A Panel Task: In the image you have a row of comic panels. From the options pick the panel that best follows the context caption. You must return your final answer as a number with 'answer: <your answer here>'",
+        }
+
+        self.processor = processor
+        self.train = train
+
+        self.prompts = single_image_prompts
+
+
+    def __call__(self, batch):
+
+        assert len(batch) == 1, "MiniCPM model only supports single sample batches. Why? I don't know!!!!! People use batches right? Or am I the crazy one?"
+        
+        sample = batch[0]
+        
+        message = self.prompts[sample["task_type"]]
+        if sample["task_type"] == "caption_relevance":
+            message += f"context: {sample["previous_panel_caption"]}\n\n"
+        message = [{'role': 'user', 'content': message}]
+
+        images = sample["single_image"]
+
+        inputs = {
+            "msgs": message,
+            "image": images,
+            "context": None
+        }
+
+        return inputs, dict(labels=[sample["solution_index"] for sample in batch], sample_ids=[sample["sample_id"] for sample in batch], messages=message)
+
+def build_minicpm(args):
+    import transformers
+    assert transformers.__version__ == "4.36.0", "MiniCPM does not work with newer versions of transformers"
+
+    import torch
+    from transformers import AutoModel, AutoProcessor
+    
+    model = AutoModel.from_pretrained(
+        args.model,
+        torch_dtype=torch.float32,
+        attn_implementation="flash_attention_2",
+        device_map='auto' if args.max_steps == 0 else None,
+        trust_remote_code=True,
+    )
+
+    processor = AutoProcessor.from_pretrained(args.model, trust_remote_code=True)
+    collator = MiniCPMCollator(processor, args)
 
     return model, collator

@@ -32,30 +32,51 @@ def evaluate_skill(model, dataset, collator, device, skill, args):
         dataset,
         batch_size=args.eval_batch_size,
         shuffle=False,
-        num_workers=20,
+        num_workers=10,
         collate_fn=collator
     )
-
     # First pass: collect all model outputs
-    for inputs, metadata in tqdm(dataloader, desc=f"Evaluating {skill}"):
-        # Move inputs to device
-        inputs = {k: v.to(device) for k, v in inputs.items()}
-        
+    for inputs, metadata in tqdm(dataloader, desc=f"Evaluating {skill}"):        
         # Generate predictions
         with torch.no_grad():
-            outputs = model.generate(
-                **inputs,
-                max_new_tokens=512,
-            )
+            if 'molmo' in args.model.lower():
+                from transformers import GenerationConfig
+                inputs = {k: v.to(device).unsqueeze(0) for k, v in inputs.items()}
+                outputs = model.generate_from_batch(
+                    inputs,
+                    GenerationConfig(max_new_tokens=200, stop_strings="<|endoftext|>"),
+                    tokenizer=collator.processor.tokenizer)
+                
+                all_outputs.extend(outputs.cpu())
+                
+            elif 'minicpm' in args.model.lower():
+                res, context, _  = model.chat(
+                    **inputs,
+                    max_new_tokens=512,
+                    tokenizer=collator.processor,
+                    disable_compile=True
+                )
+                all_outputs.append(res)
+            else:
+                inputs = {k: v.to(device) for k, v in inputs.items()}
+                outputs = model.generate(
+                    **inputs,
+                    max_new_tokens=512,
+                    disable_compile='paligemma' in args.model.lower() # https://github.com/huggingface/transformers/issues/36544
+                )
         
-        all_outputs.extend(outputs.cpu())
+            all_outputs.extend(outputs.cpu())
         all_metadata.append(metadata)
-
-    
-    # Batch decode all outputs
-    print(f"Decoding {skill} outputs...")
-    predictions = collator.processor.batch_decode(all_outputs, skip_special_tokens=True)
-    
+    if 'minicpm' in args.model.lower():
+        predictions = all_outputs
+    elif 'molmo' in args.model.lower():
+        print(f"Decoding {skill} outputs...")
+        predictions = collator.processor.tokenizer.batch_decode(all_outputs, skip_special_tokens=True)
+    else:
+        # Batch decode all outputs
+        print(f"Decoding {skill} outputs...")
+        predictions = collator.processor.batch_decode(all_outputs, skip_special_tokens=True)
+    51
     # Process all predictions at once
     print(f"Processing {skill} predictions...")
     numerical_preds = [extract_prediction(pred) for pred in predictions]

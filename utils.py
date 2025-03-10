@@ -66,6 +66,15 @@ def build_model(args):
     elif "llama" in args.model.lower():
         from model_builders import build_llama
         return build_llama(args)
+    elif "paligemma" in args.model.lower():
+        from model_builders import build_paligemma
+        return build_paligemma(args)
+    elif "molmo" in args.model.lower():
+        from model_builders import build_molmo
+        return build_molmo(args)
+    elif "minicpm" in args.model.lower():
+        from model_builders import build_minicpm
+        return build_minicpm(args)
     else:
         raise ValueError("Model not supported")
     
