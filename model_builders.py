@@ -147,7 +147,7 @@ def build_qwen(args):
     from qwen_vl_utils import process_vision_info
     
     if 'lora' in args.model:
-        model_path = args.model.split('_lora')[0]
+        model_path = args.model.split('_lora')[0] if '_' in args.model else args.model.split('-lora')[0]
     else:
         model_path = args.model
     
@@ -598,3 +598,30 @@ def build_minicpm(args):
     collator = MiniCPMCollator(processor, args)
 
     return model, collator
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", type=str, required=True)
+    parser.add_argument("--hf_repo", type=str, required=True)
+    args = parser.parse_args()
+
+    args.max_steps = 0
+    args.single_image = True
+
+    if "qwen" in args.model.lower():
+        model, collator = build_qwen(args)
+    elif "smolvlm" in args.model.lower():
+        model, collator = build_smolvlm(args)
+    elif "llama" in args.model.lower():
+        model, collator = build_llama(args)
+    elif "paligemma" in args.model.lower():
+        model, collator = build_paligemma(args)
+    elif "molmo" in args.model.lower():
+        model, collator = build_molmo(args)
+    elif "minicpm" in args.model.lower():
+        model, collator = build_minicpm(args)
+    else:
+        raise ValueError("Model not supported")
+
+    model.push_to_hub(args.hf_repo)
