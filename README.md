@@ -1,5 +1,7 @@
 # Comics Pick-A-Panel
-Code for the Comics Pick-a-Panel dataset and baselines 
+Code for the Comics Pick-a-Panel dataset and baselines.
+
+![ComicsPAP](teaser.jpg)
 
 ## Dataset
 The dataset is available at HuggingFace: [VLR-CVC/ComicsPAP](https://huggingface.co/datasets/VLR-CVC/ComicsPAP)
